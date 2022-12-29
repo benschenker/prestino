@@ -23,7 +23,14 @@ impl HeaderField {
     fn get_key(&self) -> &'static str {
         match self {
             HeaderField::User(_) => "User",
-            _ => todo!(),
+            HeaderField::Source(_) => "Source",
+            HeaderField::Catalog(_) => "Catalog",
+            HeaderField::Schema(_) => "Schema",
+            HeaderField::TraceToken(_) => "Trace-Token",
+            HeaderField::Session(_) => "Session",
+            HeaderField::TransactionId(_) => "Transaction-Id",
+            HeaderField::ClientInfo(_) => "Client-Info",
+            HeaderField::ClientTag(_) => "Client-Tags",
         }
     }
 }
@@ -44,12 +51,29 @@ impl HeaderBuilder {
     fn get_prefix() -> &'static str {
         "X-Trino-"
     }
+    fn serialize_session(session: &HashMap<String, String>) -> String {
+        let mut c = session
+            .iter()
+            .map(|(key, val)| format!("{}={}", key, val))
+            .collect::<Vec<String>>();
+        c.sort(); // to easily test this serialization
+
+        let serialized = c.join(",");
+        serialized
+    }
     pub fn set_headers(&self, mut builder: Builder) -> Builder {
         for header in &self.headers {
             let key = format!("{}{}", Self::get_prefix(), header.get_key());
-            let val = match header {
-                HeaderField::User(val) => val,
-                _ => todo!(),
+            let val: String = match header {
+                HeaderField::User(val) => val.to_owned(),
+                HeaderField::Source(val) => val.to_owned(),
+                HeaderField::Catalog(val) => val.to_owned(),
+                HeaderField::Schema(val) => val.to_owned(),
+                HeaderField::TraceToken(val) => val.to_owned(),
+                HeaderField::Session(val) => Self::serialize_session(val),
+                HeaderField::TransactionId(val) => val.to_owned(),
+                HeaderField::ClientInfo(val) => val.to_owned(),
+                HeaderField::ClientTag(val) => val.to_owned(),
             };
             builder = builder.header(key, val);
         }
@@ -64,15 +88,70 @@ mod tests {
     use hyper::Request;
 
     #[test]
-    fn test_set_headers_with_user() {
+    fn test_set_headers_with_all_simple_fields() {
         let builder = Request::builder();
         let r = HeaderBuilder::new()
-            .add_header(HeaderField::User("test".to_string()))
+            .add_header(HeaderField::User("test user".to_string()))
+            .add_header(HeaderField::Source("test source".to_string()))
+            .add_header(HeaderField::Catalog("test catalog".to_string()))
+            .add_header(HeaderField::Schema("test schema".to_string()))
+            .add_header(HeaderField::TraceToken("test token".to_string()))
+            .add_header(HeaderField::TransactionId("test id".to_string()))
+            .add_header(HeaderField::ClientInfo("test info".to_string()))
+            .add_header(HeaderField::ClientTag("test tag".to_string()))
             .set_headers(builder)
             .body(())
             .unwrap();
-        let header_value: &HeaderValue = r.headers().get("X-Trino-User").unwrap();
-        let value = &HeaderValue::from_str("test").unwrap();
-        assert_eq!(header_value, value);
+
+        assert_eq!(
+            r.headers().get("X-Trino-User").unwrap(),
+            &HeaderValue::from_str("test user").unwrap()
+        );
+        assert_eq!(
+            r.headers().get("X-Trino-Source").unwrap(),
+            &HeaderValue::from_str("test source").unwrap()
+        );
+        assert_eq!(
+            r.headers().get("X-Trino-Catalog").unwrap(),
+            &HeaderValue::from_str("test catalog").unwrap()
+        );
+        assert_eq!(
+            r.headers().get("X-Trino-Schema").unwrap(),
+            &HeaderValue::from_str("test schema").unwrap()
+        );
+        assert_eq!(
+            r.headers().get("X-Trino-Trace-Token").unwrap(),
+            &HeaderValue::from_str("test token").unwrap()
+        );
+        assert_eq!(
+            r.headers().get("X-Trino-Transaction-Id").unwrap(),
+            &HeaderValue::from_str("test id").unwrap()
+        );
+        assert_eq!(
+            r.headers().get("X-Trino-Client-Info").unwrap(),
+            &HeaderValue::from_str("test info").unwrap()
+        );
+        assert_eq!(
+            r.headers().get("X-Trino-Client-Tags").unwrap(),
+            &HeaderValue::from_str("test tag").unwrap()
+        );
+    }
+
+    #[test]
+    fn test_set_headers_with_session() {
+        let builder = Request::builder();
+        let r = HeaderBuilder::new()
+            .add_header(HeaderField::Session(HashMap::from([
+                ("key1".to_string(), "value1".to_string()),
+                ("key2".to_string(), "value2".to_string()),
+            ])))
+            .set_headers(builder)
+            .body(())
+            .unwrap();
+
+        assert_eq!(
+            r.headers().get("X-Trino-Session").unwrap(),
+            &HeaderValue::from_str("key1=value1,key2=value2").unwrap()
+        );
     }
 }
